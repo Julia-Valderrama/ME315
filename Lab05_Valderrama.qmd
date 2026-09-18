@@ -1,0 +1,236 @@
+---
+title: "Laboratório 05"
+author: "Julia Valderrama Siqueria - 259409"
+format: pdf
+editor: visual
+---
+
+# Laboratório 05
+
+```{r, message=FALSE, warning=FALSE}
+#install.packages("leaflet")
+#install.packages("webshot2")
+#carregando os pacotes
+library(tidyverse)
+library(ggplot2)
+library(leaflet)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#carregando o banco de dados dos aeroportos que vamos cruzar com o banco de dados dos voos
+airports <- read_csv("airports.csv")
+head(airports)
+```
+
+## Parte 1:
+
+Crie uma função que:
+
+a\. Receba um valor de TAIL_NUMBER (por exemplo, N431WN);
+
+b\. Produza uma tabela (tidy) com todos os trajetos realizados pela aeronave (ordenadas por data e hora, contendo todas as colunas do arquivo flights.csv.zip);
+
+c\. Produza um mapa que apresente todo o trajeto voado pela aeronave ao longo de todo o ano; o trajeto deve ser apresentado de maneira linear no tempo (i.e., segue a sequência do tempo, como no exemplo hipotético dado acima);
+
+d\. O mapa deve ser decorado com estatísticas do seu interesse (por exemplo, velocidade média do vôo como espessura da linha que conecta os aeroportos envolvidos no trajeto);
+
+```{r, message=FALSE, warning=FALSE}
+#criando a função que vai analisar a rota das aeronaves
+analisa_aeronave <- function(tail_number, arquivo) { 
+  
+  voos_aeronave <- tibble() #tabela vazia que vai receber os voos feitos pela aeronave
+  
+  processa_chunk <- function(dados, pos) { #funçao que vai analisar o flights por partes
+    voos <- dados %>%
+      filter(TAIL_NUMBER == tail_number) #filtramos apenas os voos da aeronave escolhida
+    
+    voos_aeronave <<- bind_rows( #tabela recebe os voos feitos pela aeronave 
+      voos_aeronave,
+      voos
+    )
+  }
+  
+  read_csv_chunked(
+    arquivo,
+    callback = DataFrameCallback$new(processa_chunk),
+    chunk_size = 10000, #o codigo vai analisar 10.000 linhas em cada parte do banco de dados
+    progress = FALSE 
+  )
+  
+  if (nrow(voos_aeronave) == 0) {
+    stop("A aeronave não foi encontrada") #se o nº de voos da aeronave escolhida for 0 a função exibe a mensagem
+  }
+  
+  voos_aeronave <- voos_aeronave %>%
+    mutate(
+      DATA = as.Date(
+        paste(YEAR, MONTH, DAY, sep = "-")
+      )
+    ) %>%
+    arrange(DATA, DEPARTURE_TIME) #organiza e ordenas os voos de acordo com a data 
+#tabela com as informações necessárias para obter o trajeto da aeronave
+  tabela_trajeto <- voos_aeronave %>% 
+    select(
+      DATA,
+      DEPARTURE_TIME,
+      TAIL_NUMBER,
+      ORIGIN_AIRPORT,
+      DESTINATION_AIRPORT,
+      DISTANCE,
+      AIR_TIME
+    )
+#coordenadas do aeroporto de origem
+  origens <- airports %>%
+    select(
+      IATA_CODE,
+      LATITUDE,
+      LONGITUDE
+    ) %>%
+    rename(
+      ORIGIN_AIRPORT = IATA_CODE,
+      LAT_ORIGEM = LATITUDE,
+      LONG_ORIGEM = LONGITUDE
+    )
+#coordenadas do aeroporto de destino
+  destinos <- airports %>%
+    select(
+      IATA_CODE,
+      LATITUDE,
+      LONGITUDE
+    ) %>%
+    rename(
+      DESTINATION_AIRPORT = IATA_CODE,
+      LAT_DESTINO = LATITUDE,
+      LONG_DESTINO = LONGITUDE
+    )
+#cruzamos as tabelas doos voos com os aeroportos
+  tabela_trajeto <- tabela_trajeto %>%
+    left_join(
+      origens,
+      by = "ORIGIN_AIRPORT"
+    ) %>%
+    left_join(
+      destinos,
+      by = "DESTINATION_AIRPORT"
+    ) %>%
+    mutate(
+      VELOCIDADE_MEDIA = DISTANCE / (AIR_TIME / 60) #calculamos a vel. média dos voos
+    )
+
+#criamos um mapa para vizualizar os trajetos da aeronave  
+  mapa <- leaflet() %>%
+    addTiles()
+  
+  mapa <- mapa %>% #adicionamos os aeroportos de origem
+    addCircleMarkers(
+      data = tabela_trajeto,
+      lng = ~LONG_ORIGEM,
+      lat = ~LAT_ORIGEM,
+      radius = 5,
+      popup = ~paste(
+        "Aeroporto:", ORIGIN_AIRPORT,
+        "<br>Data:", DATA,
+        "<br>Horário:", DEPARTURE_TIME
+      )
+    )
+ 
+  mapa <- mapa %>% #adicionamos tbm os aeroportos de destino
+    addCircleMarkers(
+      data = tabela_trajeto,
+      lng = ~LONG_DESTINO,
+      lat = ~LAT_DESTINO,
+      radius = 5,
+      popup = ~paste(
+        "Aeroporto:", DESTINATION_AIRPORT,
+        "<br>Data:", DATA
+      )
+    )
+  #percorremos por todos os voos realizados pela aeronave e traçamos no mapa
+  for (i in seq_len(nrow(tabela_trajeto))) {
+    
+    if (
+      !is.na(tabela_trajeto$LAT_ORIGEM[i]) &&
+      !is.na(tabela_trajeto$LONG_ORIGEM[i]) &&
+      !is.na(tabela_trajeto$LAT_DESTINO[i]) &&
+      !is.na(tabela_trajeto$LONG_DESTINO[i])
+    ) {
+      
+      espessura <- ifelse(
+        is.na(tabela_trajeto$VELOCIDADE_MEDIA[i]),
+        3,
+        max(
+          2,
+          min(
+            8,
+            2 + tabela_trajeto$VELOCIDADE_MEDIA[i] / 200
+          )
+        )
+      )
+      
+      mapa <- mapa %>%  #traçamos no mapa uma linha que liga a origem ao destino de cada voo realizado pela aeronave
+        addPolylines(
+          lng = c(
+            tabela_trajeto$LONG_ORIGEM[i],
+            tabela_trajeto$LONG_DESTINO[i]
+          ),
+          lat = c(
+            tabela_trajeto$LAT_ORIGEM[i],
+            tabela_trajeto$LAT_DESTINO[i]
+          ),
+          weight = espessura,
+          popup = paste(
+            "Trecho:",
+            tabela_trajeto$ORIGIN_AIRPORT[i],
+            "→",
+            tabela_trajeto$DESTINATION_AIRPORT[i],
+            "<br>Distância:",
+            tabela_trajeto$DISTANCE[i],
+            "milhas",
+            "<br>Velocidade média:",
+            round(
+              tabela_trajeto$VELOCIDADE_MEDIA[i],
+              1
+            ),
+            "milhas/h"
+          )
+        )
+    }
+  }
+  
+  resultado <- list(
+    tabela = tabela_trajeto,
+    mapa = mapa
+  )
+  
+  return(resultado)
+}
+```
+
+## Resultados obtidos
+
+```{r, message=FALSE, warning=FALSE}
+resultado <- analisa_aeronave(
+  tail_number = "N431WN", #identificação da aeronave escolhida
+  arquivo = "flights.csv"
+)
+```
+
+```{r}
+resultado$tabela #exibe a tabela dos voos feitos pela aeronave escolhida no chunck acima
+```
+
+```{r}
+resultado$mapa #exibe o mapa dos voos feitos pela aeronave escolhida no chunck acima
+```
+
+## Parte 2:
+
+a.  Seu código deve ser bem comentado;
+b.  Os nomes das variáveis devem ser esclarecedores (por exemplo, x é um nome ruim);
+c.  Seu código será avaliado por 5 de seus colegas;
+d.  A parte de avaliação (descrita em c.) acontecerá na semana de 23 a 27 de setembro (com entrega obrigatória no dia 27);
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
