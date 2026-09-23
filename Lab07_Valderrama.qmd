@@ -1,0 +1,125 @@
+---
+title: "Laboratório 07"
+author: "Julia Valderrama Siqueira"
+format: pdf
+editor: visual
+---
+
+1. Baixe o arquivo uwmadison.sqlite3. Conecte-se a ele usando o pacote RSQLite, armazenando a conexão em uma variável conn.
+
+```{r}
+setwd("C:/Users/jvald/Downloads/ME315")
+
+library(RSQLite)
+library(DBI)
+
+conn <- dbConnect(SQLite(),"uwmadison.sqlite3")
+dbListTables(conn)
+```
+
+2. Quem são e quantos são os professores que lecionaram disciplinas cujo tópico era estatística (subjects.abbreviation='STAT');
+```{r}
+dbGetQuery(conn, "SELECT COUNT(DISTINCT instructors.id) AS quantidade
+FROM subjects
+JOIN subject_memberships
+    ON subjects.code = subject_memberships.subject_code
+JOIN course_offerings
+    ON subject_memberships.course_offering_uuid = course_offerings.uuid
+JOIN sections
+    ON course_offerings.uuid = sections.course_offering_uuid
+JOIN teachings
+    ON sections.uuid = teachings.section_uuid
+JOIN instructors
+    ON teachings.instructor_id = instructors.id
+WHERE subjects.abbreviation = 'STAT'")
+```
+
+3. O GPA americano é definido numa escala de 0 a 4, em que A = 4, AB = 3.5, B = 3, BC = 2.5, C = 2, D = 1 e F = 0. Determinando a nota média de cada oferecimento pela ponderação da quantidade de alunos em cada extrato com os valores numéricos de cada conceito, indique (no que se referente a disciplinas no assunto de estatística):
+
+
+```{r}
+professores <- dbGetQuery(conn, "
+SELECT instructors.name, AVG((4*gd.a_count + 3.5*gd.ab_count + 3*gd.b_count + 2.5*gd.bc_count + 2*gd.c_count +gd.d_count)/(gd.a_count + gd.ab_count + gd.b_count + gd.bc_count + gd.c_count + gd.d_count + gd.f_count) ) AS gpa_medio
+
+FROM grade_distributions AS gd 
+JOIN subject_memberships AS sm ON gd.course_offering_uuid = sm.course_offering_uuid
+JOIN subjects AS s ON sm.subject_code = s.code
+JOIN sections ON gd.course_offering_uuid = sections.course_offering_uuid
+AND gd.section_number = sections.number
+JOIN teachings ON sections.uuid = teachings.section_uuid
+JOIN instructors ON teachings.instructor_id = instructors.id
+WHERE s.abbreviation = 'STAT'
+GROUP BY instructors.id, instructors.name
+ORDER BY gpa_medio")
+head(professores)
+```
+
+```{r}
+dbWriteTable(conn, "professores", professores, temporary = TRUE)
+```
+
+Quem é o professor mais difícil?
+```{r}
+dbGetQuery(conn, "SELECT name, gpa_medio
+FROM professores
+WHERE gpa_medio IS NOT NULL
+ORDER BY gpa_medio
+LIMIT 1")
+```
+
+Quem é o professor mais fácil?
+```{r}
+dbGetQuery(conn, "SELECT name, gpa_medio
+FROM professores
+WHERE gpa_medio IS NOT NULL
+ORDER BY gpa_medio DESC
+LIMIT 1")
+```
+
+```{r}
+disciplinas <- dbGetQuery(conn, "SELECT courses.number, courses.name, AVG(( 4*gd.a_count + 3.5*gd.ab_count + 3*gd.b_count + 2.5*gd.bc_count + 2*gd.c_count + gd.d_count)/(gd.a_count + gd.ab_count + gd.b_count + gd.bc_count + gd.c_count + gd.d_count + gd.f_count)) AS gpa_medio
+FROM grade_distributions AS gd
+JOIN subject_memberships AS sm
+ON gd.course_offering_uuid = sm.course_offering_uuid
+JOIN subjects AS s 
+ON sm.subject_code = s.code
+JOIN course_offerings
+ON gd.course_offering_uuid = course_offerings.uuid
+JOIN courses
+ON course_offerings.course_uuid = courses.uuid
+WHERE s.abbreviation = 'STAT'
+GROUP BY courses.uuid, courses.number, courses.name
+ORDER BY gpa_medio")
+head(disciplinas)
+```
+```{r}
+dbWriteTable(conn, "disciplinas", disciplinas, temporary = TRUE)
+```
+
+Qual é a disciplina mais difícil?
+```{r}
+dbGetQuery(conn, "SELECT name, gpa_medio
+FROM disciplinas
+WHERE gpa_medio IS NOT NULL
+ORDER BY gpa_medio
+LIMIT 1")
+```
+
+Qual é a disciplina mais fácil?
+```{r}
+dbGetQuery(conn, "SELECT name, gpa_medio
+FROM disciplinas
+WHERE gpa_medio IS NOT NULL
+ORDER BY gpa_medio DESC
+LIMIT 1")
+```
+
+4. Desconecte do banco de dados.
+```{r}
+dbDisconnect(conn)
+```
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
