@@ -1,0 +1,117 @@
+---
+title: "lab 09"
+author: "Julia Valderrama Siqueira - 259409"
+format: pdf
+editor: visual
+---
+```{r}
+#install.packages("reticulate")
+```
+```{r}
+library(reticulate)
+py_install("polars")
+py_install("plotnine")
+```
+
+1. Importe o conjunto de dados diamonds, cujo arquivo está disponível no website da disciplina.
+```{python}
+import pandas as pd
+import numpy as np
+
+from plotnine import *
+
+#ler o arquivo
+df = pd.read_csv("diamonds.csv")
+
+print(df.head())
+print(df.shape)
+print(df.info())
+
+```
+
+2. Crie uma visualização de dados que descreva a associação existente entre as variáveis peso (carat) e preço (price). Que ações você tomou para garantir que você produziu um gráfico de boa qualidade? Escreva um parágrafo comunicando os seus achados.
+```{python}
+
+grafico1 = (
+    ggplot(df, aes(x="carat", y="price"))
+    + geom_point(alpha=0.18, size=0.8, color="steelblue")
+    + geom_smooth(
+        method="lm",
+        formula="y ~ x + I(x**2)",
+        color="darkred",
+        se=True
+    )
+    + labs(
+        title="Relação entre peso e preço dos diamantes",
+        subtitle="Associação entre quilates e preço em dólares",
+        x="Peso (quilates)",
+        y="Preço (US$)",
+        caption="Fonte: dados diamonds, disponibilizados na disciplina"
+    )
+    + theme_minimal()
+    + theme(figure_size=(9, 5.5))
+)
+
+print(grafico1)
+
+```
+
+O gráfico de dispersão permite analisar a associação entre o peso e o preço dos diamantes. Observa-se que diamantes com maior peso em quilates geralmente apresentam preços mais elevados. Também existe dispersão entre os preços de diamantes com pesos semelhantes, indicando que outras características podem estar relacionadas ao valor.
+
+3. A relação identificada na questão anterior é a mesma relação presente nos diferentes cortes de diamantes? Crie uma visualização que demonstre seus achados eficientemente. Descreva sua conclusão em um parágrafo.
+
+```{python}
+grafico2 = (ggplot(df, aes(x="carat", y="price"))
+    + geom_point(alpha=0.12, size=0.7, color="steelblue")
+    + geom_smooth(
+        method="lm",
+        formula="y ~ x + I(x**2)",
+        se=False,
+        color="darkred")
+    + facet_wrap("~cut", ncol=3)
+    + labs(
+        title="Relação entre peso e preço por qualidade do corte",
+        x="Peso (quilates)",
+        y="Preço (US$)")
+    + theme_minimal()
+    + theme(figure_size=(10, 7)))
+
+print(grafico2)
+```
+O formato das curvas e a dispersão dos preços podem variar de acordo com a qualidade do corte. Portanto, o peso é um importante fator associado ao preço, mas não explica sozinho todas as diferenças observadas. A visualização permite comparar os grupos, embora não seja suficiente para estabelecer causalidade.
+
+4. Crie uma visualização que mostre a relação entre preço e peso do diamante, considerando as diferentes combinações de qualidade de corte, cor e clareza do diamante. Quais foram as dificuldades encontradas? A relação entre preço e peso é a mesma para diferentes configurações de diamantes?
+
+```{python}
+grafico3 = (
+    ggplot(
+        df,
+        aes(x="carat", y="price", color="cut")
+    )
+    + geom_point(alpha=0.35, size=0.7)
+    + facet_grid("color ~ clarity")
+    + labs(
+        title="Relação entre peso e preço dos diamantes",
+        subtitle="Comparação por corte, cor e clareza",
+        x="Peso (quilates)",
+        y="Preço (US$)",
+        color="Qualidade do corte"
+    )
+    + theme_minimal()
+    + theme(
+        figure_size=(18, 13),
+        axis_text_x=element_text(size=6),
+        axis_text_y=element_text(size=6),
+        strip_text=element_text(size=8),
+        legend_position="bottom"
+    )
+)
+
+print(grafico3)
+```
+O gráfico mostra uma associação positiva entre peso e preço nas diferentes configurações de diamantes, mas a relação não é exatamente igual em todos os grupos. Isso indica que, além do peso, características como corte, cor e clareza também estão associadas ao preço dos diamantes.
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
